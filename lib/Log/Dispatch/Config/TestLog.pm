@@ -5,7 +5,7 @@ package Log::Dispatch::Config::TestLog;
 use strict;
 use warnings;
 
-our $VERSION = "0.01";
+our $VERSION = "0.02";
 
 use Sub::Override;
 use Test::Builder;
@@ -50,6 +50,10 @@ sub caller_file_to_log_file {
 			or die "Couldn't create test log directory $log_dir";
 	}
 
+	unless ( -w $log_dir ) {
+		die "Log directory $log_dir is not writable";
+	}
+
 	return $log_dir->file( $file->basename . ".log" )->stringify;
 }
 
@@ -60,12 +64,14 @@ sub import {
 
 	require Test::Builder;
 
+	my $file = file($0)->absolute;
+
     Log::Dispatch::Config->configure(
         $self->new(
 			%args,
             file => {
 				mode     => "write",
-				filename => $self->caller_file_to_log_file( file((caller)[1]), %args ),
+				filename => $self->caller_file_to_log_file( $file, %args ),
 				format   => "[%d] [%p] %m\n",
 				%{ $args{file} || {} }
 			},
@@ -83,13 +89,14 @@ sub import {
 	if ( defined( $tap_level ) ) {
 		
 		unless ( @overrides ) {
-			foreach my $print qw(_print _print_diag) {
+			foreach my $print ( qw(_diag _print_to_fh) ) {
 				no strict 'refs';
 				my $fq = "Test::Builder::$print";
 				my $orig = \&$fq;
 
 				push @overrides, Sub::Override->new( $fq, sub {
 					my ( $builder, @output ) = @_;
+					shift @output if $print eq '_print_to_fh'; # first arg is output handle
 					chomp( my $out = "@output" );
 					$logger->$tap_level("TAP: $out") if length $out;
 					goto $orig;
@@ -156,9 +163,7 @@ provide a one line format by default.
 
 =head1 VERSION CONTROL
 
-This module is maintained using Darcs. You can get the latest version from
-L<http://nothingmuch.woobling.org/code>, and use C<darcs send> to commit
-changes.
+L<http://github.com/nothingmuch/log-dispatch-config-testlog>
 
 =head1 AUTHOR
 
@@ -166,7 +171,7 @@ Yuval Kogman E<lt>nothingmuch@woobling.orgE<gt>
 
 =head1 COPYRIGHT
 
-	Copyright (c) 2008 Yuval Kogman. All rights reserved
+	Copyright (c) 2008, 2010 Yuval Kogman. All rights reserved
 	This program is free software; you can redistribute
 	it and/or modify it under the same terms as Perl itself.
 
